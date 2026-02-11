@@ -1,0 +1,46 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ["-b", "main", "-p", "release/.*"]
+      - id: check-added-large-files
+        args: ["--maxkb=10240"] # 10MiB
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: end-of-file-fixer
+        exclude: (^tests/test_data/|\.(pdb|sdf)$)
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+        exclude: (^tests/test_data/|\.(pdb|sdf)$)
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        exclude: (^tests/test_data/|\.(pdb|sdf)$)
+      - id: name-tests-test
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--fixable=I"]
+        types_or: ["python", "pyi", "jupyter"]
+        fail_fast: true
+      - id: ruff-format
+        types_or: ["python", "pyi", "jupyter"]
+  - repo: https://github.com/seoklab/shared-hooks
+    rev: v0.1.6
+    hooks:
+      - id: only-ascii
+        files: ^(src|scripts|tests)/.*\.py$
+      - id: forbid-merge
+        stages: [manual]
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+default_stages:
+  - pre-commit

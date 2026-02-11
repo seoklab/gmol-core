@@ -1,0 +1,3 @@
+.git_archival.txt export-subst
+uv.lock binary linguist-generated=true
+tests/test_data/** binary linguist-generated=true
