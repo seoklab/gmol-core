@@ -13,7 +13,7 @@ dependencies = [
     "numpy",
     "nurikit>=0.1.0a16,<0.2.0",
     "pandas>=2.0,<3.0",
-    "pdbeccdutils~=0.8.5",
+    "pdbeccdutils~=1.0.0",
     "pydantic>=2.7,<3.0",
     "pyyaml>=6.0.3,<7.0.0",
     "rdkit>=2024.3",

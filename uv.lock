@@ -518,7 +518,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "nurikit", specifier = ">=0.1.0a16,<0.2.0" },
     { name = "pandas", specifier = ">=2.0,<3.0" },
-    { name = "pdbeccdutils", specifier = "~=0.8.5" },
+    { name = "pdbeccdutils", specifier = "~=1.0.0" },
     { name = "pydantic", specifier = ">=2.7,<3.0" },
     { name = "pyyaml", specifier = ">=6.0.3,<7.0.0" },
     { name = "rdkit", specifier = ">=2024.3" },
@@ -1442,7 +1442,7 @@ wheels = [
 
 [[package]]
 name = "pdbeccdutils"
-version = "0.8.5"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "gemmi", marker = "sys_platform == 'linux'" },
@@ -1451,13 +1451,14 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and sys_platform == 'linux'" },
     { name = "pillow", marker = "sys_platform == 'linux'" },
+    { name = "rdkit", marker = "sys_platform == 'linux'" },
     { name = "requests", marker = "sys_platform == 'linux'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
     { name = "scipy", version = "1.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1a/b0/632f7692b29bdfe95eac7e00ce1c62a868aeaa6e3bd576b4d05c699f6c80/pdbeccdutils-0.8.5.tar.gz", hash = "sha256:1c8dd4168123f4808e6ae1621e146d0afa26ad9ecd5ec07285921e0a56fb274d", size = 121673, upload-time = "2024-05-24T08:45:07.464Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/2b/4066fa18e379039472d0ab65e8752d342a860d67e86b9b663328306b53ba/pdbeccdutils-1.0.0.tar.gz", hash = "sha256:d32ba6772a4224e5e2727afc25fc8d08590a64b853ffe8351412fff465ab8fd9", size = 1036703, upload-time = "2025-09-04T10:44:17.222Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/50/0f2e5da81fa27e4fafae5fb915d6c18e781ca560c6d6677e7f081bf8a6f7/pdbeccdutils-0.8.5-py3-none-any.whl", hash = "sha256:900e3fbf085e0cfdf5371e7f8769a21bbfb050517d62f9a5c8cc5eff5cf266e2", size = 149037, upload-time = "2024-05-24T08:45:05.774Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/94/77773171d66dac29e59a22df87505e05faba30a2c4a1faceff5262228a10/pdbeccdutils-1.0.0-py3-none-any.whl", hash = "sha256:dcc6bcb363f9cb0f9be15c465abf2a56809926d8275ccdc50d4f8438ab776c7b", size = 1115148, upload-time = "2025-09-04T10:44:14.817Z" },
 ]
 
 [[package]]
