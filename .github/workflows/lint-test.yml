@@ -79,6 +79,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    permissions:
+      id-token: write
+
     strategy:
       fail-fast: false
       matrix:
@@ -116,7 +119,16 @@ jobs:
           uv run coverage run
           # no doctests for now
           # uv run coverage run -a -m pytest -vs src --doctest-modules
-          uv run coverage report
+          uv run coverage xml
+
+      - if: ${{ matrix.coverage }}
+        uses: codecov/codecov-action@v5
+        with:
+          disable_search: true
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          verbose: true
+          use_oidc: true
 
   conclusion-lint-test:
     needs: [lint, test]
