@@ -1,0 +1,101 @@
+name: Create release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release"
+        type: string
+        required: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint-test:
+    uses: ./.github/workflows/lint-test.yml
+
+  build:
+    needs: lint-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - uses: astral-sh/setup-uv@v7
+
+      - if: ${{ github.event.inputs.version != '' }}
+        run: |
+          echo "SETUPTOOLS_SCM_PRETEND_VERSION=$version" >>"$GITHUB_ENV"
+        env:
+          version: ${{ github.event.inputs.version }}
+
+      - run: uv build --no-sources --clear --no-create-gitignore
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dist
+          path: dist/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.event_name == 'push' && 'production' || 'staging' }}
+      url: ${{ github.event_name == 'push' && 'https://pypi.org' || 'https://test.pypi.org' }}/p/gmol-core
+
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist
+          merge-multiple: true
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+          repository-url: ${{ github.event_name == 'push' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+          skip-existing: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - id: prerelease-check
+        run: |
+          regex='((a|b|rc)([[:digit:]]+\.post)?|\.dev)[[:digit:]]+$'
+
+          if grep -E "$regex" <<<"$GITHUB_REF"; then
+            echo prerelease=true >> $GITHUB_OUTPUT
+          else
+            echo prerelease=false >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_REF: ${{ github.ref }}
+
+      - if: ${{ github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "dist/*"
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease-check.outputs.prerelease == 'true' }}
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
