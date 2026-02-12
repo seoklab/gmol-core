@@ -1,3 +1,29 @@
+"""
+Some of the code is imported from OpenFold.
+See https://github.com/aqlaboratory/openfold/blob/main/openfold/np/residue_constants.py
+for the original code.
+
+.. admonition:: License
+    :collapsible: closed
+
+    .. code-block::
+
+        Copyright 2021 AlQuraishi Laboratory
+        Copyright 2021 DeepMind Technologies Limited
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+
+            http://www.apache.org/licenses/LICENSE-2.0
+
+        Unless required by applicable law or agreed to in writing, software
+        distributed under the License is distributed on an "AS IS" BASIS,
+        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        See the License for the specific language governing permissions and
+        limitations under the License.
+"""
+
 # ===same ordering of Amino acid as in AlphaFold2======
 # This is the standard residue order when coding AA type as a number.
 # Reproduce it by taking 3-letter AA codes and sorting them alphabetically.
