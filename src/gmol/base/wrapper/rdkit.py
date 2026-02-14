@@ -62,7 +62,7 @@ def generate_conformer(
 
         # Attempt embedding
         params = AllChem.ETKDGv3()
-        params.maxAttempts = max_attempts
+        params.maxIterations = max_attempts
         success = False
 
         if AllChem.EmbedMolecule(new_m, params) == 0:
