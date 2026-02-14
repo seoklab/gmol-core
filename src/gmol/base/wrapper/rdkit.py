@@ -1,3 +1,4 @@
+import re
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -104,6 +105,9 @@ def generate_conformer(
             raise ValueError(f"Conformer generation failed: {e}") from e
 
 
+_end_re = re.compile(r"^END\s*", re.MULTILINE)
+
+
 def write_mols(
     save_path: Path | str,
     mols: Chem.Mol | None | Iterable[Chem.Mol | None],
@@ -134,12 +138,18 @@ def write_mols(
                     w.write(m)
     elif ext == ".pdb":
         with save_path.open("w") as f:
+            written = False
+
             for idx, m in enumerate(mols, start=1):
                 if m is not None:
+                    written = True
                     pdb_block = Chem.MolToPDBBlock(m)
+                    pdb_block = _end_re.sub("", pdb_block)
                     f.write(f"MODEL {idx:8d}\n")
                     f.write(pdb_block)
                     f.write("ENDMDL\n")
+            if written:
+                f.write("END\n")
     else:
         raise ValueError(
             f"Unsupported file extension '{ext}'. Supported: .sdf, .pdb"
