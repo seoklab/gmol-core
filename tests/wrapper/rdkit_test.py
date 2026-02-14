@@ -31,7 +31,7 @@ def test_write_mols_single_mol_pdb(tmp_path: Path, ethane_mol: Chem.Mol):
     write_mols(out, ethane_mol)
     assert out.is_file()
     content = out.read_text()
-    assert "MODEL     1" in content
+    assert "MODEL        1" in content
     assert "ENDMDL" in content
 
 
@@ -52,8 +52,8 @@ def test_write_mols_list_pdb(
     out = tmp_path / "out.pdb"
     write_mols(out, [ethane_mol, benzene_mol])
     content = out.read_text()
-    assert "MODEL     1" in content
-    assert "MODEL     2" in content
+    assert "MODEL        1" in content
+    assert "MODEL        2" in content
     assert content.count("ENDMDL") == 2
 
 
