@@ -1,11 +1,13 @@
+import logging
 import re
-import warnings
 from collections.abc import Iterable
 from itertools import count
 from pathlib import Path
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
+
+_logger = logging.getLogger(__name__)
 
 
 def smi2mol(
@@ -67,9 +69,8 @@ def generate_conformer(
             success = True
 
         if not success:
-            warnings.warn(
-                "Initial embedding failed, retrying with random coordinates.",
-                stacklevel=1,
+            _logger.warning(
+                "Initial embedding failed, retrying with random coordinates."
             )
             params.useRandomCoords = True
             if AllChem.EmbedMolecule(new_m, params) != 0:
@@ -85,9 +86,8 @@ def generate_conformer(
             maxIters=optimize_iters,
         )
         if opt_status != 0:
-            warnings.warn(
-                f"MMFF optimization returned status {opt_status}.",
-                stacklevel=1,
+            _logger.warning(
+                "MMFF optimization returned status %s.", opt_status
             )
 
         # Assign new stereochemistry for featurizers
@@ -95,15 +95,14 @@ def generate_conformer(
         Chem.rdmolops.AssignStereochemistryFrom3D(result)
         return result
 
-    except Exception as e:
+    except Exception:
         if ignore_failures:
-            warnings.warn(
-                "Generating conformer failed. Use the original conformer.",
-                stacklevel=1,
+            _logger.exception(
+                "Generating conformer failed. Use the original conformer."
             )
             return orig_m
-        else:
-            raise ValueError(f"Conformer generation failed: {e}") from e
+
+        raise
 
 
 _end_re = re.compile(r"^END\s*", re.MULTILINE)
