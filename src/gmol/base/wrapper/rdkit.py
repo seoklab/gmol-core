@@ -137,7 +137,7 @@ def write_mols(
             for idx, m in enumerate(mols, start=1):
                 if m is not None:
                     pdb_block = Chem.MolToPDBBlock(m)
-                    f.write(f"MODEL     {idx}\n")
+                    f.write(f"MODEL {idx:8d}\n")
                     f.write(pdb_block)
                     f.write("ENDMDL\n")
     else:
