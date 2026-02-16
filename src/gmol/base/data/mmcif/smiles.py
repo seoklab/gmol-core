@@ -43,6 +43,7 @@ def mol_from_chem_comp(
         # Some entries produce isolated explicit H atoms during processing.
         # RemoveHs() cannot delete degree-0 H atoms and emits warnings, so
         # drop them here when the bond/heavy-atom partner is missing.
+        # Ref: seoklab/gmol-base#9.
         if atom_data.type_symbol == "H" and atom_data.atom_id not in bond_ids:
             continue
 
