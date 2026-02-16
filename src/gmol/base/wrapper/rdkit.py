@@ -3,6 +3,7 @@ import re
 from collections.abc import Iterable
 from itertools import count
 from pathlib import Path
+from typing import cast
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -103,6 +104,67 @@ def generate_conformer(
             return orig_m
 
         raise
+
+
+def read_mols(
+    file_path: Path | str,
+    sanitize: bool = True,
+    remove_h: bool = False,
+) -> list[Chem.Mol]:
+    """Read a molecular file into a list of RDKit Mol objects.
+
+    Supported formats: ``.mol2``, ``.sdf``, ``.pdb``.
+
+    :param file_path: Path to the molecular file.
+    :param sanitize: If True, sanitize each molecule after reading.
+    :param remove_h: If True, remove explicit hydrogens from each molecule.
+    :returns: List of RDKit Mol objects; entries that failed to parse are omitted.
+    """
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    ext = file_path.suffix.lower()
+
+    try:
+        if ext == ".mol2":
+            mol = cast(
+                Chem.Mol | None,
+                Chem.MolFromMol2File(
+                    str(file_path), sanitize=False, removeHs=False
+                ),
+            )
+            mols = [mol] if mol is not None else []
+        elif ext == ".sdf":
+            with Chem.SDMolSupplier(
+                str(file_path), sanitize=False, removeHs=False
+            ) as suppl:
+                mols = [m for m in suppl if m is not None]  # pyright: ignore[reportUnnecessaryComparison]
+        elif ext == ".pdb":
+            mol = cast(
+                Chem.Mol | None,
+                Chem.MolFromPDBFile(
+                    str(file_path), sanitize=False, removeHs=False
+                ),
+            )
+            mols = [mol] if mol is not None else []
+        else:
+            raise ValueError(
+                f"Unsupported file extension '{ext}'. Supported formats: .mol2, .sdf, .pdbqt, .pdb."
+            )
+
+        if sanitize:
+            for mol in mols:
+                Chem.SanitizeMol(mol)
+
+        if remove_h:
+            mols = [Chem.RemoveHs(mol, sanitize=sanitize) for mol in mols]
+
+    except Exception as exc:
+        raise ValueError(f"Error processing molecule: {exc}") from exc
+
+    return mols
 
 
 _end_re = re.compile(r"^END\s+", re.MULTILINE)
