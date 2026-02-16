@@ -839,7 +839,8 @@ def build_input(
     mmcif_bond_index = {_bond_as_key(bond): bond for bond in explicit_bonds}
     for bond in new_bonds_for_modres:
         if _bond_as_key(bond) in mmcif_bond_index:
-            logger.warning("Duplicate bond: %s", bond)
+            # See seoklab/gmol-base#9 for context.
+            logger.debug("Duplicate bond: %s", bond)
         else:
             explicit_bonds.append(bond)
 
