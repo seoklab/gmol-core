@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from rdkit import Chem
@@ -171,17 +172,23 @@ def _remove_leaving_atoms(
     ref_ligand: MmcifRefLigand,
     leaving_atoms: set[str],
 ) -> MmcifRefLigand:
+    # Leaving atoms might leave dangling fragments: seoklab/gmol-base#9.
+
+    g = nx.Graph()
+    for bond in ref_ligand.bonds:
+        g.add_edge(bond.atom_id_1, bond.atom_id_2, bond=bond)
+    g.remove_nodes_from(leaving_atoms)
+
+    fragments = list(nx.connected_components(g))
+    main = max(fragments, key=len)
+
     ref_ligand.atoms = [
-        atom for atom in ref_ligand.atoms if atom.atom_id not in leaving_atoms
+        atom for atom in ref_ligand.atoms if atom.atom_id in main
     ]
     ref_ligand.bonds = [
-        bond
-        for bond in ref_ligand.bonds
-        if (
-            bond.atom_id_1 not in leaving_atoms
-            and bond.atom_id_2 not in leaving_atoms
-        )
+        bond for *_, bond in g.subgraph(main).edges(data="bond")
     ]
+
     return ref_ligand
 
 
@@ -192,17 +199,8 @@ def _add_inter_residue_bonds(
     if not extra_bonds:
         return ref_ligand
 
-    leaving_atoms = {
-        *(
-            unique_atom_id(bond.ptnr1.res_id, bond.ptnr1.leaving_atom_id)
-            for bond in extra_bonds
-        ),
-        *(
-            unique_atom_id(bond.ptnr2.res_id, bond.ptnr2.leaving_atom_id)
-            for bond in extra_bonds
-        ),
-    }
-    ref_ligand = _remove_leaving_atoms(ref_ligand, leaving_atoms)
+    # Avoid original bonds being modified by reference
+    ref_ligand.bonds = ref_ligand.bonds.copy()
 
     for bond in extra_bonds:
         ref_ligand.bonds.append(
@@ -217,6 +215,18 @@ def _add_inter_residue_bonds(
             )
         )
 
+    leaving_atoms = {
+        *(
+            unique_atom_id(bond.ptnr1.res_id, bond.ptnr1.leaving_atom_id)
+            for bond in extra_bonds
+        ),
+        *(
+            unique_atom_id(bond.ptnr2.res_id, bond.ptnr2.leaving_atom_id)
+            for bond in extra_bonds
+        ),
+    }
+
+    ref_ligand = _remove_leaving_atoms(ref_ligand, leaving_atoms)
     return ref_ligand
 
 
