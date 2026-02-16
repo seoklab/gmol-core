@@ -5,12 +5,12 @@ import logging
 from collections.abc import Set
 from dataclasses import InitVar, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import ConfigDict, TypeAdapter
-from pydantic.dataclasses import dataclass
 from rdkit import Chem
 from scipy.spatial import distance as D
 
@@ -38,6 +38,11 @@ from .smiles import (
     reference_from_mmcif,
     unique_atom_id,
 )
+
+if TYPE_CHECKING:
+    from dataclasses import dataclass
+else:
+    from pydantic.dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +193,7 @@ class BondClass(enum.IntEnum):
         return mapping.get(conn_type.lower(), cls.unknown)
 
 
-@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+@dataclass
 class PolymerChain:
     mol_type: MolType
 
@@ -209,11 +214,13 @@ class PolymerChain:
     # [N_res]
     residue_ids: list[ResidueId | None]
 
+    __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
+
     def __len__(self):
         return len(self.restype)
 
 
-@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+@dataclass
 class NonPolymerLigand:
     entity_id: str
     chain_id: str
@@ -224,6 +231,8 @@ class NonPolymerLigand:
     atom_ids: NDArray[np.str_]
     # [N_atom, 3]
     atom_coords: NDArray[np.float64]
+
+    __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
 
 
 @dataclass(order=True, frozen=True)
