@@ -2,6 +2,7 @@ import datetime as dt
 import enum
 import gzip
 import logging
+from collections.abc import Set
 from dataclasses import InitVar, field
 from pathlib import Path
 
@@ -315,6 +316,7 @@ def _update_polymer_residue_coords(
     assembly: Assembly,
     residue: Residue,
     polymer_consts: PolymerConstants,
+    well_known_atoms: Set[str],
     comp_id: str | None = None,
 ):
     comp_id = comp_id or residue.chem_comp.id
@@ -331,11 +333,12 @@ def _update_polymer_residue_coords(
         try:
             coords[atom_idxs[atom.atom_id]] = assembly.coords[atom.atom_idx]
         except KeyError:
-            logger.warning(
-                "Unknown atom %s in compound %s",
-                atom.atom_id,
-                comp_id,
-            )
+            if atom.atom_id not in well_known_atoms:
+                logger.warning(
+                    "Unknown atom %s in compound %s",
+                    atom.atom_id,
+                    comp_id,
+                )
 
     if comp_id != "ARG":
         return
@@ -598,6 +601,7 @@ def process_polymer_chain(
     chain: Chain,
     ccd: dict[str, ChemComp],
     split_modified: bool = False,
+    well_known_atoms: Set[str] = frozenset({"OXT", "HXT"}),
 ):
     polymer_consts = chain_type_to_constants[chain.type]
 
@@ -638,6 +642,7 @@ def process_polymer_chain(
                     assembly,
                     assembly.residues[seq.res_id],
                     polymer_consts,
+                    well_known_atoms,
                 )
             continue
 
@@ -671,7 +676,8 @@ def process_polymer_chain(
                 assembly,
                 assembly.residues[seq.res_id],
                 polymer_consts,
-                polymer_consts.modres_backbone_3,
+                well_known_atoms,
+                comp_id=polymer_consts.modres_backbone_3,
             )
 
         sidechain_ligands, inter_bonds_local, atom_map = _modres_split_bb_sc(
@@ -795,6 +801,7 @@ def build_input(
     metadata: Mmcif,
     ccd: dict[str, ChemComp],
     split_modified: bool = False,
+    well_known_atoms: Set[str] = frozenset({"OXT", "HXT"}),
 ) -> Input:
     # bonds for modified residues (backbone - sidechain)
     new_bonds_for_modres: list[ExtraBond] = []
@@ -807,7 +814,11 @@ def build_input(
             continue
 
         poly, nonpolys, modres_bonds, modres_map = process_polymer_chain(
-            assembly, chain, ccd, split_modified
+            assembly,
+            chain,
+            ccd,
+            split_modified,
+            well_known_atoms,
         )
         polymers_all.append(poly)
         non_polymers_all.extend(nonpolys)
