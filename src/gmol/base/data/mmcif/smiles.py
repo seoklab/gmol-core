@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 import networkx as nx
@@ -8,6 +9,8 @@ from rdkit import Chem
 from gmol.base.wrapper.rdkit import smi2mol
 from .assembly import Branch, ResidueId
 from .parse import ChemComp, ChemCompAtom, ChemCompBond
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -86,12 +89,31 @@ def mol_from_chem_comp(
             continue
         if bond.GetBondType() != Chem.BondType.DOUBLE:
             continue
-        # Select any configuration and neighbors, will be corrected below
+
+        # Skip stereo bonds with insufficient substituent neighbors
+        a = bond.GetBeginAtom()
+        b = bond.GetEndAtom()
+        a_subs = [
+            n.GetIdx() for n in a.GetNeighbors() if n.GetIdx() != b.GetIdx()
+        ]
+        b_subs = [
+            n.GetIdx() for n in b.GetNeighbors() if n.GetIdx() != a.GetIdx()
+        ]
+        if not a_subs or not b_subs:
+            _logger.warning(
+                (
+                    "Invalid bond stereo config: bond %d (%d-%d) has "
+                    "absolute_config but insufficient neighbors"
+                ),
+                bond.GetIdx(),
+                a.GetIdx(),
+                b.GetIdx(),
+            )
+            continue
+
         bond.SetStereo(Chem.BondStereo.STEREOE)
-        ni = bond.GetBeginAtom().GetNeighbors()[0].GetIdx()
-        nj = bond.GetEndAtom().GetNeighbors()[0].GetIdx()
         # Required, set which neighbor is the "stereo atom".
-        bond.SetStereoAtoms(ni, nj)
+        bond.SetStereoAtoms(a_subs[0], b_subs[0])
 
     # Required, if not specified, resulting smiles omits E/Z stereochemistry
     Chem.AssignStereochemistry(mol, force=True)
