@@ -184,6 +184,18 @@ def test_read_mols_multiple_mol2(test_data: Path):
     assert mols[1].GetNumBonds() == 25
 
 
+def test_read_mols_multiple_pdb(test_data: Path):
+    pdb_path = test_data / "ligands" / "ligands.pdb"
+    mols = read_mols(pdb_path)
+    assert len(mols) == 2
+
+    assert mols[0].GetNumAtoms() == 56
+    assert mols[0].GetNumBonds() == 59
+
+    assert mols[1].GetNumAtoms() == 22
+    assert mols[1].GetNumBonds() == 25
+
+
 @pytest.mark.parametrize("ligand", LIGAND_NAMES)
 def test_write_mols_ligands_sdf(tmp_path: Path, test_data: Path, ligand: str):
     """Read SDF from ligands dir, write to tmp SDF, read back and compare count."""
