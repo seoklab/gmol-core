@@ -167,7 +167,7 @@ def read_mols(
         with Chem.SDMolSupplier(
             str(file_path), sanitize=False, removeHs=False
         ) as suppl:
-            mols = [m for m in suppl if m is not None]  # pyright: ignore[reportUnnecessaryComparison]
+            mols = [m for m in suppl if cast(Chem.Mol | None, m) is not None]
     elif ext == ".pdb":
         mol = cast(
             Chem.Mol | None,
