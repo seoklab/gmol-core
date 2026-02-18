@@ -151,7 +151,7 @@ def read_mols(
             mols = [mol] if mol is not None else []
         else:
             raise ValueError(
-                f"Unsupported file extension '{ext}'. Supported formats: .mol2, .sdf, .pdbqt, .pdb."
+                f"Unsupported file extension '{ext}'. Supported formats: .mol2, .sdf, .pdb."
             )
 
         if sanitize:
