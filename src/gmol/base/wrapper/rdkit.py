@@ -106,6 +106,36 @@ def generate_conformer(
         raise
 
 
+def _split_read_mol2(path: str):
+
+    def _read_mol(block: list[str]):
+        mol2 = "".join(block)
+        mol = Chem.MolFromMol2Block(
+            mol2,
+            sanitize=False,
+            removeHs=False,
+        )
+        return cast(Chem.Mol | None, mol)
+
+    with open(path) as f:
+        block: list[str] = []
+
+        for line in f:
+            if line.startswith("@<TRIPOS>MOLECULE") and block:
+                mol = _read_mol(block)
+                if mol is not None:
+                    yield mol
+
+                block.clear()
+
+            block.append(line)
+
+        if block:
+            mol = _read_mol(block)
+            if mol is not None:
+                yield mol
+
+
 def read_mols(
     file_path: Path | str,
     sanitize: bool = True,
@@ -132,13 +162,7 @@ def read_mols(
         )
 
     if ext == ".mol2":
-        mol = cast(
-            Chem.Mol | None,
-            Chem.MolFromMol2File(
-                str(file_path), sanitize=False, removeHs=False
-            ),
-        )
-        mols = [mol] if mol is not None else []
+        mols = list(_split_read_mol2(str(file_path)))
     elif ext == ".sdf":
         with Chem.SDMolSupplier(
             str(file_path), sanitize=False, removeHs=False
