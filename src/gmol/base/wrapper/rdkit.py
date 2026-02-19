@@ -3,6 +3,7 @@ import re
 from collections.abc import Iterable
 from itertools import count
 from pathlib import Path
+from typing import cast
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -103,6 +104,118 @@ def generate_conformer(
             return orig_m
 
         raise
+
+
+def _split_read_mol2(path: str):
+
+    def _read_mol(block: list[str]):
+        mol2 = "".join(block)
+        mol = Chem.MolFromMol2Block(
+            mol2,
+            sanitize=False,
+            removeHs=False,
+        )
+        return cast(Chem.Mol | None, mol)
+
+    with open(path) as f:
+        block: list[str] = []
+
+        for line in f:
+            if line.startswith("@<TRIPOS>MOLECULE") and block:
+                mol = _read_mol(block)
+                if mol is not None:
+                    yield mol
+
+                block.clear()
+
+            block.append(line)
+
+        if block:
+            mol = _read_mol(block)
+            if mol is not None:
+                yield mol
+
+
+def _split_read_pdb(path: str):
+
+    def _read_mol(block: list[str]):
+        pdb = "".join(block)
+        mol = Chem.MolFromPDBBlock(
+            pdb,
+            sanitize=False,
+            removeHs=False,
+        )
+        return cast(Chem.Mol | None, mol)
+
+    with open(path) as f:
+        block: list[str] = []
+
+        for line in f:
+            if line.startswith("MODEL"):
+                block.clear()
+                continue
+
+            if line.startswith("ENDMDL"):
+                mol = _read_mol(block)
+                if mol is not None:
+                    yield mol
+
+                block.clear()
+                continue
+
+            block.append(line)
+
+        if block:
+            # If no "MODEL/ENDMDL" is found, the whole file is interpreted as a
+            # single molecule.
+            mol = _read_mol(block)
+            if mol is not None:
+                yield mol
+
+
+def read_mols(
+    file_path: Path | str,
+    sanitize: bool = True,
+    remove_h: bool = False,
+) -> list[Chem.Mol]:
+    """Read a molecular file into a list of RDKit Mol objects.
+
+    Supported formats: ``.mol2``, ``.sdf``, ``.pdb``.
+
+    :param file_path: Path to the molecular file.
+    :param sanitize: If True, sanitize each molecule after reading.
+    :param remove_h: If True, remove explicit hydrogens from each molecule.
+    :returns: List of RDKit Mol objects; entries that failed to parse are omitted.
+    """
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    ext = file_path.suffix.lower()
+    if ext not in (".mol2", ".sdf", ".pdb"):
+        raise ValueError(
+            f"Unsupported file extension '{ext}'. Supported formats: .mol2, .sdf, .pdb."
+        )
+
+    if ext == ".mol2":
+        mols = list(_split_read_mol2(str(file_path)))
+    elif ext == ".sdf":
+        with Chem.SDMolSupplier(
+            str(file_path), sanitize=False, removeHs=False
+        ) as suppl:
+            mols = [m for m in suppl if cast(Chem.Mol | None, m) is not None]
+    elif ext == ".pdb":
+        mols = list(_split_read_pdb(str(file_path)))
+
+    if sanitize:
+        for mol in mols:
+            Chem.SanitizeMol(mol)
+
+    if remove_h:
+        mols = [Chem.RemoveHs(mol, sanitize=sanitize) for mol in mols]
+
+    return mols
 
 
 _end_re = re.compile(r"^END\s+", re.MULTILINE)
