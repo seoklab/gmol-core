@@ -152,16 +152,8 @@ def _split_read_pdb(path: str):
 
         for line in f:
             if line.startswith("MODEL"):
-                if not block:
-                    continue
-
-                _logger.warning(
-                    (
-                        "Multiple MODEL entries found in PDB file without "
-                        "ENDMDL. Splitting anyway after MODEL record."
-                    )
-                )
-                line = "ENDMDL"
+                block.clear()
+                continue
 
             if line.startswith("ENDMDL"):
                 mol = _read_mol(block)
