@@ -11,7 +11,12 @@ from typing import ClassVar, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from gmol.base.const import aa_restype_3to1, modres
+from gmol.base.const import (
+    aa_restype_3to1,
+    dna_restype_3to1,
+    modres,
+    rna_restype_3to1,
+)
 from .parse import (
     AtomSite,
     BioAssembly,
@@ -1275,12 +1280,21 @@ class Assembly:
     def to_fasta(self, name: str) -> str:
         fastas: list[str] = []
         for chain_id, chain in self.chains.items():
-            if chain.type != MolType.Protein:
+            if not chain.type.is_polymer:
                 continue
+
             seq_list = []
             for seqres in chain.seqres:
-                comp_id = modres.get(seqres.comp_id, seqres.comp_id)
-                seq_list.append(aa_restype_3to1.get(comp_id, "X"))
+                comp_id = seqres.comp_id
+
+                if chain.type == MolType.Protein:
+                    comp_id = modres.get(comp_id, comp_id)
+                    seq_list.append(aa_restype_3to1.get(comp_id, "X"))
+                elif chain.type == MolType.DNA:
+                    seq_list.append(dna_restype_3to1.get(comp_id, "N"))
+                elif chain.type == MolType.RNA:
+                    seq_list.append(rna_restype_3to1.get(comp_id, "N"))
+
             seq = "".join(seq_list)
             fastas.append(f">{name}_{chain_id}\n{seq}\n")
         return "".join(fastas)
