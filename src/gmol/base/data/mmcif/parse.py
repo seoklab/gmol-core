@@ -49,6 +49,7 @@ from nuri.fmt import cif_ddl2_frame_as_dict, read_cif
 from pydantic import (
     AliasChoices,
     AliasPath,
+    BaseModel,
     Field,
     field_validator,
     model_validator,
@@ -380,6 +381,14 @@ def _join_chem_comp(
     return chem_comps
 
 
+class PdbMetadata(BaseModel):
+    entry_id: str
+    exptl_method: str
+    pdbx_keywords: str
+    revision_date: dt.date
+    resolution: float
+
+
 class Mmcif(LooseModel):
     entry_id: str = Field(validation_alias=AliasPath("entry", 0, "id"))
     exptl_method: str = Field(validation_alias=AliasPath("exptl", 0, "method"))
@@ -503,6 +512,15 @@ class Mmcif(LooseModel):
         for d in v:
             ret[d["id"]] = d["entity_id"]
         return ret
+
+    def metadata(self) -> PdbMetadata:
+        return PdbMetadata(
+            entry_id=self.entry_id,
+            exptl_method=self.exptl_method,
+            pdbx_keywords=self.pdbx_keywords,
+            revision_date=self.revision_date,
+            resolution=self.resolution,
+        )
 
 
 def load_mmcif_single(file: Path):

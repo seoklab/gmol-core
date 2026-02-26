@@ -3,13 +3,21 @@ import itertools
 from collections import defaultdict
 from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import cached_property
 from string import ascii_lowercase, ascii_uppercase, digits
 from typing import ClassVar, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
+from pydantic import (
+    SerializerFunctionWrapHandler,
+    TypeAdapter,
+    field_serializer,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from gmol.base.const import (
     aa_restype_3to1,
@@ -17,6 +25,7 @@ from gmol.base.const import (
     modres,
     rna_restype_3to1,
 )
+from gmol.base.types import LooseModel
 from .parse import (
     AtomSite,
     BioAssembly,
@@ -25,6 +34,7 @@ from .parse import (
     ChemComp,
     Entity,
     Mmcif,
+    PdbMetadata,
     Scheme,
     StructConn,
     SymOp,
@@ -249,6 +259,8 @@ class AssemblyAtom:
     atom_id: str
     comp_id: str
 
+    occupancy: float
+
     @property
     def chain_id(self) -> str:
         return self.residue_id.chain_id
@@ -260,6 +272,7 @@ class AssemblyAtom:
             type_symbol=self.type_symbol,
             atom_id=self.atom_id,
             comp_id=self.comp_id,
+            occupancy=self.occupancy,
         )
 
     def with_updates(self, idx: int, chain_suffix: str):
@@ -269,6 +282,7 @@ class AssemblyAtom:
             type_symbol=self.type_symbol,
             atom_id=self.atom_id,
             comp_id=self.comp_id,
+            occupancy=self.occupancy,
         )
 
 
@@ -337,6 +351,7 @@ class _PdbAtom:
     name: str
     coords: NDArray[np.float64]
     element: str
+    occupancy: float
 
     def __post_init__(self):
         assert len(self.record) == 6
@@ -354,30 +369,20 @@ class _PdbAtom:
             f"{self.res_id.chain_id}{self.res_id.seq_id:4d}{self.res_id.ins_code:1}"
             # 28-54
             f"   {self.coords[0]:>8.3f}{self.coords[1]:>8.3f}{self.coords[2]:>8.3f}"
-            # 5    6         7
-            # 56789012345678901234567
-            f"  1.00  0.00          {self.element.upper():>2}  "
+            #                       6         7
+            #                       12345678901234567
+            f"{self.occupancy:>6.2f}  0.00          {self.element.upper():>2}  "
         )
 
 
-class Assembly:
-    def __init__(
-        self,
-        coords: NDArray[np.float64],
-        atoms: list[AssemblyAtom],
-        residues: dict[ResidueId, Residue],
-        chains: dict[str, Chain],
-        entities: dict[int, Entity],
-        connections: list[AssemblyConnection],
-    ):
-        self.coords = coords
-
-        self.atoms = atoms
-        self.connections = connections
-
-        self.residues = residues
-        self.chains = chains
-        self.entities = entities
+class Assembly(LooseModel):
+    metadata: PdbMetadata
+    coords: NDArray[np.float64]
+    atoms: list[AssemblyAtom]
+    residues: dict[ResidueId, Residue]
+    chains: dict[str, Chain]
+    entities: dict[int, Entity]
+    connections: list[AssemblyConnection]
 
     @cached_property
     def comp_ids(self) -> NDArray[np.str_]:
@@ -388,6 +393,61 @@ class Assembly:
         return {
             res.chem_comp.id: res.chem_comp for res in self.residues.values()
         }
+
+    @field_serializer("coords", mode="plain")
+    @staticmethod
+    def _serialize_coords(coords: NDArray[np.float64]):
+        return coords.tolist()
+
+    @field_validator("coords", mode="before")
+    @staticmethod
+    def _validate_coords(data):
+        return np.array(data, dtype=np.float64)
+
+    @field_serializer("residues", mode="plain")
+    @staticmethod
+    def _serialize_residues(residues: dict[ResidueId, Residue]):
+        res = [
+            {
+                f.name: getattr(residue, f.name)
+                for f in fields(residue)
+                if f.name != "chem_comp"
+            }
+            | {"comp_id": residue.chem_comp.id}
+            for residue in residues.values()
+        ]
+        return res
+
+    @model_serializer(mode="wrap")
+    def _gather_chem_comps(self, handler: SerializerFunctionWrapHandler):
+        ccd = self.chem_comps
+        data = handler(self)
+        data["chem_comps"] = ccd
+        return data
+
+    @field_validator("residues", mode="before")
+    @staticmethod
+    def _validate_residues(residues):
+        if isinstance(residues, dict):
+            return residues
+
+        residues = {ResidueId(**res["residue_id"]): res for res in residues}
+        return residues
+
+    @model_validator(mode="before")
+    @staticmethod
+    def _scatter_chem_comps(data):
+        try:
+            ccd = data.pop("chem_comps")
+        except Exception:
+            return data
+
+        ccd = TypeAdapter(dict[str, ChemComp]).validate_python(ccd)
+
+        for res in data["residues"]:
+            res["chem_comp"] = ccd[res.pop("comp_id")]
+
+        return data
 
     def count_polymer_chains(self) -> int:
         return len(self.chains) - sum(
@@ -419,11 +479,9 @@ class Assembly:
 
         coords = self.coords[selected]
 
-        atoms: list[AssemblyAtom] = [
+        atoms = [
             atom.new_atom(i)
-            for i, atom in enumerate(
-                np.array(self.atoms, dtype=object)[selected]
-            )
+            for i, atom in enumerate(itertools.compress(self.atoms, selected))
         ]
 
         residues: dict[ResidueId, Residue] = {}
@@ -464,12 +522,13 @@ class Assembly:
         entities = {eid: self.entities[eid] for eid in eids}
 
         return Assembly(
-            coords,
-            atoms,
-            residues,
-            chains,
-            entities,
-            connections,
+            metadata=self.metadata,
+            coords=coords,
+            atoms=atoms,
+            residues=residues,
+            chains=chains,
+            entities=entities,
+            connections=connections,
         )
 
     def filter_chains(self, chain_ids: list[str]):
@@ -480,14 +539,7 @@ class Assembly:
         return self.filter(selected)
 
     def transform(self, xform: Transformation) -> "Assembly":
-        return Assembly(
-            xform @ self.coords,
-            self.atoms,
-            self.residues,
-            self.chains,
-            self.entities,
-            self.connections,
-        )
+        return self.model_copy(update={"coords": xform @ self.coords})
 
     def apply(self, operations: list[Transformation]) -> "Assembly":
         return Assembly.join([self.transform(op) for op in operations])
@@ -534,7 +586,15 @@ class Assembly:
             )
         )
 
-        return cls(coords, atoms, residues, chains, entities, connections)
+        return cls(
+            metadata=assemblies[0].metadata,
+            coords=coords,
+            atoms=atoms,
+            residues=residues,
+            chains=chains,
+            entities=entities,
+            connections=connections,
+        )
 
     def to_mmcif(self, name: str, write_schemes: bool = True) -> str:
         merged_branches: dict[int, set[Branch]] = defaultdict(set)
@@ -582,9 +642,30 @@ class Assembly:
             if seqres.res_id is not None
         }
 
+        m = self.metadata
         mmcif_content = (
             f"data_{name}"
+            + mmcif_write_block("entry", ["id"], [(m.entry_id,)])
+            + mmcif_write_block("exptl", ["method"], [(m.exptl_method,)])
             + mmcif_write_block(
+                "struct_keywords",
+                ["pdbx_keywords"],
+                [(m.pdbx_keywords,)],
+            )
+            + mmcif_write_block(
+                "pdbx_audit_revision_history",
+                ["ordinal", "revision_date"],
+                [(1, m.revision_date.isoformat())],
+            )
+            + mmcif_write_block(
+                "refine",
+                ["ls_d_res_high"],
+                [(f"{m.resolution:.2f}",)],
+            )
+        )
+
+        mmcif_content += (
+            mmcif_write_block(
                 "entity",
                 ["id", "type", "pdbx_description"],
                 [
@@ -602,29 +683,41 @@ class Assembly:
                 [
                     "id",
                     "type_symbol",
+                    "group_PDB",
                     "label_atom_id",
+                    "label_alt_id",
                     "label_comp_id",
                     "label_asym_id",
                     "label_seq_id",
                     "auth_seq_id",
+                    "auth_comp_id",
+                    "auth_asym_id",
                     "pdbx_PDB_ins_code",
+                    "pdbx_PDB_model_num",
                     "Cartn_x",
                     "Cartn_y",
                     "Cartn_z",
+                    "occupancy",
                 ],
                 [
                     (
                         atom.atom_idx,
                         atom.type_symbol,
+                        "ATOM",
                         atom.atom_id,
+                        ".",
                         atom.comp_id,
                         atom.chain_id,
                         label_seqs[atom.residue_id],
                         atom.residue_id.seq_id,
+                        atom.comp_id,
+                        atom.chain_id,
                         atom.residue_id.ins_code or ".",
+                        1,
                         f"{crd[0]:.3f}",
                         f"{crd[1]:.3f}",
                         f"{crd[2]:.3f}",
+                        f"{atom.occupancy:.2f}",
                     )
                     for atom, crd in zip(self.atoms, self.coords)
                 ],
@@ -688,41 +781,57 @@ class Assembly:
             + mmcif_write_block(
                 "struct_conn",
                 [
+                    "id",
                     "conn_type_id",
                     "pdbx_leaving_atom_flag",
-                    "ptnr1_label_asym_id",
-                    "ptnr1_label_comp_id",
+                    "pdbx_dist_value",
                     "ptnr1_label_atom_id",
+                    "ptnr1_label_comp_id",
+                    "ptnr1_label_asym_id",
                     "ptnr1_label_seq_id",
                     "ptnr1_auth_seq_id",
+                    "ptnr1_auth_comp_id",
+                    "ptnr1_auth_asym_id",
                     "pdbx_ptnr1_PDB_ins_code",
-                    "ptnr2_label_asym_id",
-                    "ptnr2_label_comp_id",
+                    "ptnr1_symmetry",
                     "ptnr2_label_atom_id",
+                    "ptnr2_label_comp_id",
+                    "ptnr2_label_asym_id",
                     "ptnr2_label_seq_id",
                     "ptnr2_auth_seq_id",
+                    "ptnr2_auth_comp_id",
+                    "ptnr2_auth_asym_id",
                     "pdbx_ptnr2_PDB_ins_code",
+                    "ptnr2_symmetry",
                 ],
                 [
                     (
+                        str(i),
                         conn.conn_type,
                         {0: "none", 1: "one", 2: "both"}[
                             conn.leaving_atom_count
                         ],
-                        (ptnr1 := self.atoms[conn.src_idx]).chain_id,
+                        ".",
+                        (ptnr1 := self.atoms[conn.src_idx]).atom_id,
                         ptnr1.comp_id,
-                        ptnr1.atom_id,
+                        ptnr1.chain_id,
                         label_seqs[ptnr1.residue_id],
                         ptnr1.residue_id.seq_id,
+                        ptnr1.comp_id,
+                        ptnr1.chain_id,
                         ptnr1.residue_id.ins_code or ".",
-                        (ptnr2 := self.atoms[conn.dst_idx]).chain_id,
+                        "1_555",  # identity placeholder
+                        (ptnr2 := self.atoms[conn.dst_idx]).atom_id,
                         ptnr2.comp_id,
-                        ptnr2.atom_id,
+                        ptnr2.chain_id,
                         label_seqs[ptnr2.residue_id],
                         ptnr2.residue_id.seq_id,
+                        ptnr2.comp_id,
+                        ptnr2.chain_id,
                         ptnr2.residue_id.ins_code or ".",
+                        "1_555",  # identity placeholder
                     )
-                    for conn in self.connections
+                    for i, conn in enumerate(self.connections, start=1)
                 ],
             )
             + mmcif_write_block(
@@ -1243,6 +1352,7 @@ class Assembly:
                     res_name=res_name,
                     coords=self.coords[atom.atom_idx],
                     element=atom.type_symbol,
+                    occupancy=atom.occupancy,
                 )
             )
 
@@ -1491,6 +1601,7 @@ def _model_assembly(
             type_symbol=atom_site.type_symbol,
             atom_id=atom_site.label_atom_id,
             comp_id=atom_site.label_comp_id,
+            occupancy=atom_site.occupancy,
         )
         for i, atom_site in enumerate(atom_sites)
     ]
@@ -1541,12 +1652,13 @@ def _model_assembly(
     ]
 
     return Assembly(
-        coords,
-        atoms,
-        residues,
-        chains,
-        metadata.entity.copy(),
-        connections,
+        metadata=metadata.metadata(),
+        coords=coords,
+        atoms=atoms,
+        residues=residues,
+        chains=chains,
+        entities=metadata.entity.copy(),
+        connections=connections,
     )
 
 
