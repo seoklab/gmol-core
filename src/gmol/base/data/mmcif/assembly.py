@@ -298,6 +298,11 @@ class AssemblyConnection:
     conn_type: str
     leaving_atom_count: int
 
+    def __post_init__(self):
+        self.src_idx = int(self.src_idx)
+        self.dst_idx = int(self.dst_idx)
+        self.leaving_atom_count = int(self.leaving_atom_count)
+
     def remap(self, idx_map: _IndexMapper):
         return AssemblyConnection(
             src_idx=idx_map[self.src_idx],
