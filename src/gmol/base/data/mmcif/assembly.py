@@ -249,6 +249,8 @@ class AssemblyAtom:
     atom_id: str
     comp_id: str
 
+    occupancy: float
+
     @property
     def chain_id(self) -> str:
         return self.residue_id.chain_id
@@ -260,6 +262,7 @@ class AssemblyAtom:
             type_symbol=self.type_symbol,
             atom_id=self.atom_id,
             comp_id=self.comp_id,
+            occupancy=self.occupancy,
         )
 
     def with_updates(self, idx: int, chain_suffix: str):
@@ -269,6 +272,7 @@ class AssemblyAtom:
             type_symbol=self.type_symbol,
             atom_id=self.atom_id,
             comp_id=self.comp_id,
+            occupancy=self.occupancy,
         )
 
 
@@ -337,6 +341,7 @@ class _PdbAtom:
     name: str
     coords: NDArray[np.float64]
     element: str
+    occupancy: float
 
     def __post_init__(self):
         assert len(self.record) == 6
@@ -354,9 +359,9 @@ class _PdbAtom:
             f"{self.res_id.chain_id}{self.res_id.seq_id:4d}{self.res_id.ins_code:1}"
             # 28-54
             f"   {self.coords[0]:>8.3f}{self.coords[1]:>8.3f}{self.coords[2]:>8.3f}"
-            # 5    6         7
-            # 56789012345678901234567
-            f"  1.00  0.00          {self.element.upper():>2}  "
+            #                       6         7
+            #                       12345678901234567
+            f"{self.occupancy:>6.2f}  0.00          {self.element.upper():>2}  "
         )
 
 
@@ -720,7 +725,7 @@ class Assembly:
                         f"{crd[0]:.3f}",
                         f"{crd[1]:.3f}",
                         f"{crd[2]:.3f}",
-                        "1.00",
+                        f"{atom.occupancy:.2f}",
                     )
                     for atom, crd in zip(self.atoms, self.coords)
                 ],
@@ -1355,6 +1360,7 @@ class Assembly:
                     res_name=res_name,
                     coords=self.coords[atom.atom_idx],
                     element=atom.type_symbol,
+                    occupancy=atom.occupancy,
                 )
             )
 
@@ -1603,6 +1609,7 @@ def _model_assembly(
             type_symbol=atom_site.type_symbol,
             atom_id=atom_site.label_atom_id,
             comp_id=atom_site.label_comp_id,
+            occupancy=atom_site.occupancy,
         )
         for i, atom_site in enumerate(atom_sites)
     ]
