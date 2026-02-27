@@ -28,7 +28,6 @@ from .parse import (
     ChemComp,
     ChemCompAtom,
     ChemCompBond,
-    Mmcif,
     load_mmcif_single,
 )
 from .smiles import (
@@ -807,7 +806,6 @@ def _bond_as_key(bond: ExtraBond):
 
 def build_input(
     assembly: Assembly,
-    metadata: Mmcif,
     ccd: dict[str, ChemComp],
     split_modified: bool = False,
     well_known_atoms: Set[str] = frozenset({"OXT", "HXT"}),
@@ -848,8 +846,8 @@ def build_input(
         polymers=polymers_all,
         ligands=non_polymers_all,
         extra_bonds=explicit_bonds,
-        release_date=metadata.revision_date,
-        resolution=metadata.resolution,
+        release_date=assembly.metadata.revision_date,
+        resolution=assembly.metadata.resolution,
         is_distillation=False,
     )
 
@@ -860,14 +858,11 @@ def build_input_from_mmcif(
 ) -> Input | None:
     metadata = load_mmcif_single(Path(mmcif_path))
     assemblies = mmcif_assemblies(metadata, ccd_comp)
-    filtered_assembly = filter_mmcif(metadata, assemblies[0], ccd_comp)
+    filtered_assembly = filter_mmcif(assemblies[0], ccd_comp)
+
     if filtered_assembly is not None:
-        try:
-            return build_input(
-                filtered_assembly, metadata, ccd_comp, split_modified=False
-            )
-        except Exception as e:
-            raise e
+        return build_input(filtered_assembly, ccd_comp, split_modified=False)
+
     return None
 
 

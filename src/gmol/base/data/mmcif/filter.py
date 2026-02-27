@@ -13,7 +13,7 @@ from gmol.base.const import (
     aa_restype_3to1,
 )
 from .assembly import Assembly, AssemblyAtom, MolType, Residue
-from .parse import ChemComp, Mmcif
+from .parse import ChemComp
 
 __all__ = ["filter_mmcif", "filter_structure"]
 
@@ -311,7 +311,6 @@ def filter_structure(
 
 
 def filter_mmcif(
-    metadata: Mmcif,
     assembly: Assembly,
     chem_comp_dict: dict[str, ChemComp],
     cutoff_date: dt.date = dt.date(2021, 9, 30),
@@ -320,15 +319,15 @@ def filter_mmcif(
     is_test: bool = False,
 ) -> Assembly | None:
     if not (
-        metadata.revision_date < cutoff_date
-        and metadata.resolution < max_resolution
+        assembly.metadata.revision_date < cutoff_date
+        and assembly.metadata.resolution < max_resolution
         and assembly.count_polymer_chains() <= max_chains
     ):
         return None
 
     mask = filter_structure(
         assembly,
-        metadata.exptl_method,
+        assembly.metadata.exptl_method,
         chem_comp_dict,
         is_test,
     )
