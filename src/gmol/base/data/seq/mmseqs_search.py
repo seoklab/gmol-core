@@ -911,7 +911,8 @@ def run_search_from_path(
         monomer_params,
     )
 
-    if any(q.is_complex for q in queries):
+    has_heteromer = any(len(q.unique_seqs) > 1 for q in queries_unique)
+    if has_heteromer:
         mmseqs_search_pair(
             runner,
             output_dir / "qdb",
@@ -928,7 +929,7 @@ def run_search_from_path(
                 ".env.paired.a3m",
             )
 
-        # Merge per-job: read unpaired/paired a3m by sid, msa_to_str, write qid.a3m
+    if any(q.is_complex for q in queries):
         for qid, q in enumerate(queries_unique):
             unpaired_msa: list[str] = []
             paired_msa: list[str] = []
