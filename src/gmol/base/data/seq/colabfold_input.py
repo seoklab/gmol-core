@@ -31,7 +31,7 @@ class NonProteinQuery:
         def upperclass(self):
             return self.value[1]
 
-    moltype: "NonProteinQuery.Type"
+    moltype: Type
     definition: str
     copies: int = 1
 
