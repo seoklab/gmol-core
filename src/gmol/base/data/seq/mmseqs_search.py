@@ -883,8 +883,8 @@ def run_search_from_path(
     query_fas = output_dir / "query.fas"
     with query_fas.open("w") as f:
         for q in queries_unique:
-            for i, seq in enumerate(q.unique_seqs, start=101):
-                f.write(f">{i}\n{seq}\n")
+            for j, seq in enumerate(q.unique_seqs, start=101):
+                f.write(f">{j}\n{seq}\n")
 
     runner = MMseqs(threads=threads, mmseqs=mmseqs)
     runner.createdb(query_fas, output_dir / "qdb", shuffle=0)
