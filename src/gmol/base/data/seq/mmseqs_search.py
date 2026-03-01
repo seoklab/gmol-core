@@ -917,19 +917,15 @@ def run_search_from_path(
 
         # Merge per-job: read unpaired/paired a3m by index, msa_to_str, write job_index.a3m
         seqid = itertools.count(0)
-        for q in queries_unique:
+        for qid, q in enumerate(queries_unique):
             unpaired_msa: list[str] = []
             paired_msa: list[str] = []
-            templates: list[Path] = []
             for _ in q.unique_seqs:
                 sid = next(seqid)
 
                 a3m_path = output_dir / f"{sid}.a3m"
                 unpaired_msa.append(a3m_path.read_text())
                 a3m_path.unlink()
-
-                if monomer_params.template_db is not None:
-                    templates.append(output_dir / f"{sid}.m8")
 
                 if len(q.unique_seqs) > 1:
                     if env_pair_params is not None:
@@ -960,17 +956,27 @@ def run_search_from_path(
                 q.unique_seqs,
                 q.seq_counts,
             )
-            (output_dir / f"{safe_filename(q.id)}.a3m").write_text(msa)
+            (output_dir / f"{qid}.a3m").write_text(msa)
 
-            if templates:
-                tdb = typing.cast(Path, monomer_params.template_db)
-                with (
-                    output_dir / f"{safe_filename(q.id)}_{tdb.stem}.m8"
-                ).open("w") as fout:
-                    for t in templates:
-                        with t.open() as fin:
-                            shutil.copyfileobj(fin, fout)
-                        t.unlink()
+    seqid = itertools.count(0)
+    for qid, q in enumerate(queries_unique):
+        out_key = safe_filename(q.id)
+
+        output_dir.joinpath(f"{qid}.a3m").rename(output_dir / f"{out_key}.a3m")
+
+        if monomer_params.template_db is not None:
+            templates: list[Path] = []
+            for _ in q.unique_seqs:
+                sid = next(seqid)
+                templates.append(output_dir / f"{sid}.m8")
+
+            with (
+                output_dir / f"{out_key}_{monomer_params.template_db.stem}.m8"
+            ).open("w") as fout:
+                for t in templates:
+                    with t.open() as fin:
+                        shutil.copyfileobj(fin, fout)
+                    t.unlink()
 
     runner.rmdb(output_dir / "qdb")
     runner.rmdb(output_dir / "qdb_h")
