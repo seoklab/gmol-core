@@ -282,26 +282,34 @@ def get_queries(
         for file in sorted(input_path.iterdir()):
             if not file.is_file():
                 continue
-            if file.suffix.lower() not in (".a3m", ".fasta", ".faa", ".fa"):
+
+            kind = file.suffix.lower()
+            if kind not in (".a3m", ".fasta", ".faa", ".fa"):
                 _logger.warning("Skipping unsupported file: %s", file)
                 continue
-            if file.suffix.lower() == ".a3m":
-                content = file.read_text()
-                seqs, _ = parse_fasta(content)
-                if len(seqs) == 0:
-                    _logger.error("%s is empty", file)
-                    continue
+
+            content = file.read_text()
+            seqs, _ = parse_fasta(content)
+            if len(seqs) == 0:
+                _logger.error("%s is empty", file)
+                continue
+
+            seq = seqs[0]
+            if len(seqs) > 1 and kind != ".a3m":
+                _logger.warning(
+                    (
+                        "More than one sequence in %s, ignoring all but the "
+                        "first sequence"
+                    ),
+                    file,
+                )
+
+            if kind == ".a3m":
                 queries.append(
-                    MsaQuery(file.stem, [seqs[0].upper()], prev_msa=content)
+                    MsaQuery(file.stem, [seq.upper()], prev_msa=content)
                 )
             else:
-                seqs, _ = parse_fasta(file.read_text())
-                if len(seqs) == 0:
-                    _logger.error("%s is empty", file)
-                    continue
-
-                q = seqs[0]
-                queries.append(MsaQuery.from_sequence(file.stem, q))
+                queries.append(MsaQuery.from_sequence(file.stem, seq))
 
     if sort_queries_by == "length":
         queries.sort(key=lambda t: len("".join(t.seqs)))
