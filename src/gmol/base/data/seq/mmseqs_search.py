@@ -864,10 +864,12 @@ def run_search_from_path(
     pair_params: MMseqsPairSearchParams,
     env_pair_params: MMseqsPairSearchParams | None = None,
 ) -> None:
-    """Run MSA search from a FASTA/CSV/dir path. Results written as output_dir/<jobname>.a3m.
+    """Run MSA search from a FASTA/CSV/dir path. Results written as
+    output_dir/<jobname>.a3m and output_dir/<jobname>_<template_db>.m8
+    (if template search is enabled).
 
-    DB paths are under dbbase if not absolute. For complex (multi-chain) input,
-    runs monomer unpaired + optional paired search and merges per job.
+    For complex (multi-chain) input, runs monomer unpaired + optional paired
+    search and merges per job.
     """
     queries = get_queries(query, None)
     if not queries:
