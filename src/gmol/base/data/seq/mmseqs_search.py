@@ -930,22 +930,21 @@ def run_search_from_path(
                 unpaired_msa.append(a3m_path.read_text())
                 a3m_path.unlink()
 
-                if len(q.unique_seqs) > 1:
-                    if env_pair_params is not None:
-                        env_paired_path = output_dir / f"{sid}.env.paired.a3m"
-                        with (
-                            open(env_paired_path) as fin,
-                            open(
-                                output_dir / f"{sid}.paired.a3m",
-                                "a",
-                            ) as fout,
-                        ):
-                            shutil.copyfileobj(fin, fout)
-                        env_paired_path.unlink()
+                if env_pair_params is not None:
+                    env_paired_path = output_dir / f"{sid}.env.paired.a3m"
+                    with (
+                        open(env_paired_path) as fin,
+                        open(
+                            output_dir / f"{sid}.paired.a3m",
+                            "a",
+                        ) as fout,
+                    ):
+                        shutil.copyfileobj(fin, fout)
+                    env_paired_path.unlink()
 
-                    paired_path = output_dir / f"{sid}.paired.a3m"
-                    paired_msa.append(paired_path.read_text())
-                    paired_path.unlink()
+                paired_path = output_dir / f"{sid}.paired.a3m"
+                paired_msa.append(paired_path.read_text())
+                paired_path.unlink()
 
             msa = msa_to_str(
                 unpaired_msa,
