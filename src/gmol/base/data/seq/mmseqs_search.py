@@ -948,10 +948,10 @@ def run_search_from_path(
                             open(paired_path, "a") as fout,
                         ):
                             shutil.copyfileobj(fin, fout)
-                    env_paired_path.unlink()
+                    env_paired_path.unlink(missing_ok=True)
                 if heteromer:
                     paired_msa.append(paired_path.read_text())
-                paired_path.unlink()
+                paired_path.unlink(missing_ok=True)
 
             msa = msa_to_str(
                 unpaired_msa,
