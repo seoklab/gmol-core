@@ -866,6 +866,7 @@ def run_search_from_path(
     monomer_params: MMseqsMonomerSearchParams,
     pair_params: MMseqsPairSearchParams,
     env_pair_params: MMseqsPairSearchParams | None = None,
+    skip_unpaired_for_paired: bool = False,
 ) -> None:
     """Run MSA search from a FASTA/CSV/dir path. Results written as
     output_dir/<jobname>.a3m and output_dir/<jobname>_<template_db>.m8
@@ -873,6 +874,11 @@ def run_search_from_path(
 
     For complex (multi-chain) input, runs monomer unpaired + optional paired
     search and merges per job.
+
+    Args:
+        skip_unpaired_for_paired: When True, skip the monomer (unpaired) MSA
+            search entirely. Intended for heteromer-only inputs where unpaired
+            MSAs are not needed. Incompatible with monomer queries.
     """
     queries = get_queries(query, None)
     if not queries:
@@ -906,12 +912,14 @@ def run_search_from_path(
             for sid in sids:
                 f.write(f"{sid}\t{raw_first_id}\t{fid}\n")
 
-    mmseqs_search_monomer(
-        runner,
-        output_dir / "qdb",
-        output_dir,
-        monomer_params,
-    )
+    run_monomer = not skip_unpaired_for_paired
+    if run_monomer:
+        mmseqs_search_monomer(
+            runner,
+            output_dir / "qdb",
+            output_dir,
+            monomer_params,
+        )
 
     if any(q.heteromer for q in queries_unique):
         mmseqs_search_pair(
@@ -935,9 +943,10 @@ def run_search_from_path(
         paired_msa: list[str] = []
 
         for sid in sids:
-            a3m_path = output_dir / f"{sid}.a3m"
-            unpaired_msa.append(a3m_path.read_text())
-            a3m_path.unlink()
+            if run_monomer:
+                a3m_path = output_dir / f"{sid}.a3m"
+                unpaired_msa.append(a3m_path.read_text())
+                a3m_path.unlink()
 
             paired_path = output_dir / f"{sid}.paired.a3m"
             if env_pair_params is not None:
@@ -953,17 +962,16 @@ def run_search_from_path(
                 paired_msa.append(paired_path.read_text())
             paired_path.unlink(missing_ok=True)
 
+        out_key = safe_filename(q.id)
         msa = msa_to_str(
             unpaired_msa,
             paired_msa if q.heteromer else None,
             q.unique_seqs,
             q.seq_counts,
         )
-
-        out_key = safe_filename(q.id)
         (output_dir / f"{out_key}.a3m").write_text(msa)
 
-        if monomer_params.template_db is not None:
+        if run_monomer and monomer_params.template_db is not None:
             with (
                 output_dir / f"{out_key}_{monomer_params.template_db.stem}.m8"
             ).open("w") as fout:
