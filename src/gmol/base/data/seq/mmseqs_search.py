@@ -51,7 +51,6 @@ from tempfile import TemporaryDirectory
 from gmol.base.data.seq.colabfold_input import (
     MsaQuery,
     get_queries,
-    msa_to_str,
 )
 from gmol.base.path import safe_filename
 
@@ -857,6 +856,61 @@ def mmseqs_search_pair(
         )
 
 
+def _slice_a3m_sequence(seq: str, start: int, end: int) -> str:
+    """Extract columns corresponding to query positions [start, end) from an a3m sequence.
+
+    In a3m format:
+    - Uppercase letter or ``-``: aligned to a query position (counts toward query_pos).
+    - Lowercase letter: insertion relative to the query (does *not* advance query_pos);
+      belongs to the preceding aligned position.
+
+    We include a character when:
+    - Uppercase / ``-``: query_pos is in [start, end).
+    - Lowercase (insertion): the preceding aligned query_pos was in [start, end),
+      i.e., ``start < query_pos <= end`` after the last increment.
+    """
+    result: list[str] = []
+    query_pos = 0
+    for ch in seq:
+        if ch.isupper() or ch == "-":
+            if start <= query_pos < end:
+                result.append(ch)
+            query_pos += 1
+        else:  # lowercase insertion: belongs to query_pos - 1
+            if start < query_pos <= end:
+                result.append(ch)
+    return "".join(result)
+
+
+def _extract_chain_from_paired_a3m(
+    content: str, chain_lengths: list[int], chain_idx: int
+) -> str:
+    """Extract a single chain's columns from a concatenated paired a3m.
+
+    The paired a3m produced by ``mmseqs result2msa --msa-format-mode 5`` stores
+    all chains' sequences concatenated in each row.  Given the query sequence
+    lengths for every chain (``chain_lengths``), this function extracts only the
+    columns belonging to ``chain_idx``.
+    """
+    start = sum(chain_lengths[:chain_idx])
+    end = start + chain_lengths[chain_idx]
+
+    out: list[str] = []
+    header: str | None = None
+    for line in content.splitlines(keepends=True):
+        stripped = line.rstrip("\n")
+        if stripped.startswith(">"):
+            header = line
+        elif header is not None:
+            out.append(header)
+            out.append(_slice_a3m_sequence(stripped, start, end) + "\n")
+            header = None
+    # trailing header with no sequence (shouldn't happen, but be safe)
+    if header is not None:
+        out.append(header)
+    return "".join(out)
+
+
 def run_search_from_path(
     query: Path,
     output_dir: Path,
@@ -866,19 +920,18 @@ def run_search_from_path(
     monomer_params: MMseqsMonomerSearchParams,
     pair_params: MMseqsPairSearchParams,
     env_pair_params: MMseqsPairSearchParams | None = None,
-    skip_unpaired_for_paired: bool = False,
 ) -> None:
-    """Run MSA search from a FASTA/CSV/dir path. Results written as
-    output_dir/<jobname>.a3m and output_dir/<jobname>_<template_db>.m8
-    (if template search is enabled).
+    """Run MSA search from a FASTA/CSV/dir path.
 
-    For complex (multi-chain) input, runs monomer unpaired + optional paired
-    search and merges per job.
+    For monomers, results are written as ``output_dir/<jobname>.a3m`` (and
+    ``output_dir/<jobname>_<template_db>.m8`` when template search is enabled).
 
-    Args:
-        skip_unpaired_for_paired: When True, skip the monomer (unpaired) MSA
-            search entirely. Intended for heteromer-only inputs where unpaired
-            MSAs are not needed. Incompatible with monomer queries.
+    For heteromers, per-chain files are written as
+    ``output_dir/<jobname>:<chain_name>.a3m`` where each file contains the
+    paired MSA followed by the unpaired MSA for that chain.
+
+    Duplicate sequences across queries (e.g. a chain that appears both as a
+    standalone monomer query and as part of a complex) are searched only once.
     """
     queries = get_queries(query, None)
     if not queries:
@@ -888,20 +941,52 @@ def run_search_from_path(
         MMseqsQuery.from_msa_query(q) for q in queries
     ]
 
-    # One global (qid, chain_idx) -> sid mapping for query.fas, merge, and template
-    sid_by_query: list[list[int]] = []
-    sid = 0
+    # Global deduplication: each unique sequence gets one global sid.
+    # Sequences shared across queries (e.g. a monomer that also appears in a
+    # complex) are added to query.fas and searched only once.
+    seq_to_global_sid: dict[str, int] = {}
+    _gid = 0
     for q in queries_unique:
-        sids = list(range(sid, sid + len(q.unique_seqs)))
-        sid += len(q.unique_seqs)
-        sid_by_query.append(sids)
+        for seq in q.unique_seqs:
+            if seq not in seq_to_global_sid:
+                seq_to_global_sid[seq] = _gid
+                _gid += 1
+
+    # Global sid per chain, used for unpaired search (deduped across all jobs).
+    sid_by_query: list[list[int]] = [
+        [seq_to_global_sid[seq] for seq in q.unique_seqs]
+        for q in queries_unique
+    ]
+
+    # Per-job pair sids: each (job, chain) gets a unique sid regardless of
+    # sequence identity. This prevents paired MSA from being mixed across jobs
+    # when the same chain sequence appears in multiple complexes (e.g. C:D and
+    # C:E both contain C, but their paired results must stay separate).
+    pair_sid_by_query: list[list[int]] = []
+    _pid = 0
+    for q in queries_unique:
+        if q.heteromer:
+            psids = list(range(_pid, _pid + len(q.unique_seqs)))
+            _pid += len(q.unique_seqs)
+        else:
+            psids = []
+        pair_sid_by_query.append(psids)
+
+    # Reverse map sequence -> monomer query name, used to name per-chain files
+    # for heteromers (e.g. seq C from >c query -> chain name "c").
+    seq_to_monomer_name: dict[str, str] = {
+        q.unique_seqs[0]: safe_filename(q.id)
+        for q in queries_unique
+        if not q.heteromer
+    }
 
     output_dir.mkdir(exist_ok=True, parents=True)
+
+    # --- Unpaired qdb: globally deduped, one entry per unique sequence ---
     query_fas = output_dir / "query.fas"
     with query_fas.open("w") as f:
-        for q in queries_unique:
-            for j, seq in enumerate(q.unique_seqs, start=101):
-                f.write(f">{j}\n{seq}\n")
+        for seq, sid in sorted(seq_to_global_sid.items(), key=lambda x: x[1]):
+            f.write(f">{sid}\n{seq}\n")
 
     runner = MMseqs(threads=threads, mmseqs=mmseqs)
     runner.createdb(query_fas, output_dir / "qdb", shuffle=0)
@@ -912,19 +997,37 @@ def run_search_from_path(
             for sid in sids:
                 f.write(f"{sid}\t{raw_first_id}\t{fid}\n")
 
-    run_monomer = not skip_unpaired_for_paired
-    if run_monomer:
-        mmseqs_search_monomer(
-            runner,
-            output_dir / "qdb",
-            output_dir,
-            monomer_params,
-        )
+    mmseqs_search_monomer(
+        runner,
+        output_dir / "qdb",
+        output_dir,
+        monomer_params,
+    )
 
-    if any(q.heteromer for q in queries_unique):
+    # --- Paired qdb: per-job, no dedup across jobs ---
+    has_heteromer = any(q.heteromer for q in queries_unique)
+    if has_heteromer:
+        pair_query_fas = output_dir / "pair_query.fas"
+        with pair_query_fas.open("w") as f:
+            for q, psids in zip(queries_unique, pair_sid_by_query):
+                if q.heteromer:
+                    for psid, seq in zip(psids, q.unique_seqs):
+                        f.write(f">{psid}\n{seq}\n")
+
+        runner.createdb(pair_query_fas, output_dir / "pair_qdb", shuffle=0)
+
+        with (output_dir / "pair_qdb.lookup").open("w") as f:
+            for fid, (q, psids) in enumerate(
+                zip(queries_unique, pair_sid_by_query)
+            ):
+                if q.heteromer:
+                    raw_first_id = q.id.split()[0]
+                    for psid in psids:
+                        f.write(f"{psid}\t{raw_first_id}\t{fid}\n")
+
         mmseqs_search_pair(
             runner,
-            output_dir / "qdb",
+            output_dir / "pair_qdb",
             output_dir,
             pair_params,
             ".paired.a3m",
@@ -932,50 +1035,65 @@ def run_search_from_path(
         if env_pair_params is not None:
             mmseqs_search_pair(
                 runner,
-                output_dir / "qdb",
+                output_dir / "pair_qdb",
                 output_dir,
                 env_pair_params,
                 ".env.paired.a3m",
             )
 
-    for q, sids in zip(queries_unique, sid_by_query):
-        unpaired_msa: list[str] = []
-        paired_msa: list[str] = []
+    # Pre-read all unpaired a3m files into memory so that sequences shared
+    # across multiple queries (monomer + heteromer) are only read/unlinked once.
+    unpaired_by_sid: dict[int, str] = {}
+    for sid in seq_to_global_sid.values():
+        a3m_path = output_dir / f"{sid}.a3m"
+        if a3m_path.exists():
+            unpaired_by_sid[sid] = a3m_path.read_text()
+            a3m_path.unlink()
 
-        for sid in sids:
-            if run_monomer:
-                a3m_path = output_dir / f"{sid}.a3m"
-                unpaired_msa.append(a3m_path.read_text())
-                a3m_path.unlink()
-
-            paired_path = output_dir / f"{sid}.paired.a3m"
-            if env_pair_params is not None:
-                env_paired_path = output_dir / f"{sid}.env.paired.a3m"
-                if q.heteromer:
-                    with (
-                        open(env_paired_path) as fin,
-                        open(paired_path, "a") as fout,
-                    ):
-                        shutil.copyfileobj(fin, fout)
-                env_paired_path.unlink(missing_ok=True)
-            if q.heteromer:
-                paired_msa.append(paired_path.read_text())
-            paired_path.unlink(missing_ok=True)
-
+    for q, sids, psids in zip(queries_unique, sid_by_query, pair_sid_by_query):
         out_key = safe_filename(q.id)
-        msa = msa_to_str(
-            unpaired_msa,
-            paired_msa if q.heteromer else None,
-            q.unique_seqs,
-            q.seq_counts,
-        )
-        (output_dir / f"{out_key}.a3m").write_text(msa)
 
-        if run_monomer and monomer_params.template_db is not None:
-            with (
-                output_dir / f"{out_key}_{monomer_params.template_db.stem}.m8"
-            ).open("w") as fout:
-                for sid in sids:
+        if q.heteromer:
+            # Per-chain output: output_dir/{out_key}:{chain_name}.a3m
+            # Content: paired MSA + unpaired MSA (paired first)
+            for chain_idx, (sid, psid) in enumerate(zip(sids, psids)):
+                chain_seq = q.unique_seqs[chain_idx]
+                chain_name = seq_to_monomer_name.get(chain_seq, str(chain_idx))
+
+                paired_path = output_dir / f"{psid}.paired.a3m"
+                if env_pair_params is not None:
+                    env_paired_path = output_dir / f"{psid}.env.paired.a3m"
+                    if env_paired_path.exists():
+                        with (
+                            open(env_paired_path) as fin,
+                            open(paired_path, "a") as fout,
+                        ):
+                            shutil.copyfileobj(fin, fout)
+                        env_paired_path.unlink(missing_ok=True)
+
+                parts: list[str] = []
+                if paired_path.exists():
+                    parts.append(paired_path.read_text())
+                paired_path.unlink(missing_ok=True)
+
+                if sid in unpaired_by_sid:
+                    parts.append(unpaired_by_sid[sid])
+
+                (output_dir / f"{out_key}:{chain_name}.a3m").write_text(
+                    "".join(parts)
+                )
+        else:
+            # Monomer: single output file {out_key}.a3m
+            sid = sids[0]
+            (output_dir / f"{out_key}.a3m").write_text(
+                unpaired_by_sid.get(sid, "")
+            )
+
+            if monomer_params.template_db is not None:
+                with (
+                    output_dir
+                    / f"{out_key}_{monomer_params.template_db.stem}.m8"
+                ).open("w") as fout:
                     t = output_dir / f"{sid}.m8"
                     with t.open() as fin:
                         shutil.copyfileobj(fin, fout)
@@ -984,3 +1102,7 @@ def run_search_from_path(
     runner.rmdb(output_dir / "qdb")
     runner.rmdb(output_dir / "qdb_h")
     query_fas.unlink(missing_ok=True)
+    if has_heteromer:
+        runner.rmdb(output_dir / "pair_qdb")
+        runner.rmdb(output_dir / "pair_qdb_h")
+        pair_query_fas.unlink(missing_ok=True)
